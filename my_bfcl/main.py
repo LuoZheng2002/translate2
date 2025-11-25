@@ -465,69 +465,73 @@ for config in configs:
             print(f"Warning: some test cases already exist in inference result file. Skipping {len(test_cases) - len(cases_to_process)} cases.")
             printed_warning = True
 
-        # Determine model type and create interface once
-        is_api_model = isinstance(config.model, ApiModel)
-        is_local_model = isinstance(config.model, LocalModel)
-
-        # Configure concurrent request settings
-        if is_api_model:
-            max_concurrent = 8  # API models: up to 8 concurrent requests
-            print(f"API model inference configuration:")
-            print(f"  Model: {config.model.value}")
-            print(f"  Max concurrent requests: {max_concurrent}")
+        # Skip model loading if no cases to process
+        if len(cases_to_process) == 0:
+            print(f"All test cases for {config.model.value} have already been processed. Skipping model loading and inference.")
         else:
-            # For local models with vLLM, we can submit all requests concurrently
-            # vLLM's engine will handle internal batching automatically
-            max_concurrent = len(cases_to_process)  # Submit all at once
-            model_size_b = extract_model_size_in_billions(config.model)
-            print(f"Local model inference configuration:")
-            print(f"  Model: {config.model.value}")
-            print(f"  Model size: {model_size_b}B")
-            print(f"  Number of GPUs: {args.num_gpus}")
-            print(f"  Backend: {'vLLM' if USE_VLLM_BACKEND else 'HuggingFace'}")
-            print(f"  Concurrent requests: {max_concurrent} (vLLM handles internal batching)")
+            # Determine model type and create interface once
+            is_api_model = isinstance(config.model, ApiModel)
+            is_local_model = isinstance(config.model, LocalModel)
 
-        if is_api_model:
-            model_interface = create_model_interface(config.model)
-        elif is_local_model:
-            local_model = config.model
-            generator = get_or_create_local_pipeline(local_model, use_vllm=USE_VLLM_BACKEND)
-            model_interface = create_model_interface(local_model, generator)
-        else:
-            raise ValueError(f"Unsupported model type: {type(config.model)}")
+            # Configure concurrent request settings
+            if is_api_model:
+                max_concurrent = 8  # API models: up to 8 concurrent requests
+                print(f"API model inference configuration:")
+                print(f"  Model: {config.model.value}")
+                print(f"  Max concurrent requests: {max_concurrent}")
+            else:
+                # For local models with vLLM, we can submit all requests concurrently
+                # vLLM's engine will handle internal batching automatically
+                max_concurrent = len(cases_to_process)  # Submit all at once
+                model_size_b = extract_model_size_in_billions(config.model)
+                print(f"Local model inference configuration:")
+                print(f"  Model: {config.model.value}")
+                print(f"  Model size: {model_size_b}B")
+                print(f"  Number of GPUs: {args.num_gpus}")
+                print(f"  Backend: {'vLLM' if USE_VLLM_BACKEND else 'HuggingFace'}")
+                print(f"  Concurrent requests: {max_concurrent} (vLLM handles internal batching)")
 
-        # Prepare all data for concurrent processing
-        all_functions_list = []
-        all_user_queries = []
-        for case in cases_to_process:
-            functions = case['function']
-            user_question = case["question"][0][0]['content']
-            all_functions_list.append(functions)
-            all_user_queries.append(user_question)
+            if is_api_model:
+                model_interface = create_model_interface(config.model)
+            elif is_local_model:
+                local_model = config.model
+                generator = get_or_create_local_pipeline(local_model, use_vllm=USE_VLLM_BACKEND)
+                model_interface = create_model_interface(local_model, generator)
+            else:
+                raise ValueError(f"Unsupported model type: {type(config.model)}")
 
-        print(f"\nSubmitting {len(cases_to_process)} requests concurrently...")
-        all_results = model_interface.infer_batch(
-            functions_list=all_functions_list,
-            user_queries=all_user_queries,
-            prompt_passing_in_english=prompt_translate
-        )
-        print(f"All {len(cases_to_process)} requests completed.")
+            # Prepare all data for concurrent processing
+            all_functions_list = []
+            all_user_queries = []
+            for case in cases_to_process:
+                functions = case['function']
+                user_question = case["question"][0][0]['content']
+                all_functions_list.append(functions)
+                all_user_queries.append(user_question)
 
-        # Process and save results
-        for case, result in zip(cases_to_process, all_results):
-            print(f"Case {case['id']}: {case['question'][0][0]['content'][:60]}...")
-            result_to_write = {
-                "id": case["id"],
-                "result": result
-            }
-            inference_raw_results.append(result_to_write)
+            print(f"\nSubmitting {len(cases_to_process)} requests concurrently...")
+            all_results = model_interface.infer_batch(
+                functions_list=all_functions_list,
+                user_queries=all_user_queries,
+                prompt_passing_in_english=prompt_translate
+            )
+            print(f"All {len(cases_to_process)} requests completed.")
 
-        # Write all results to file
-        write_json_lines_to_file(inference_raw_result_path, inference_raw_results)
+            # Process and save results
+            for case, result in zip(cases_to_process, all_results):
+                print(f"Case {case['id']}: {case['question'][0][0]['content'][:60]}...")
+                result_to_write = {
+                    "id": case["id"],
+                    "result": result
+                }
+                inference_raw_results.append(result_to_write)
 
-        # Final sort and write
-        if len(inference_raw_results) > 0:
-            append_and_rewrite_json_lines(inference_raw_result_path, inference_raw_results)
+            # Write all results to file
+            write_json_lines_to_file(inference_raw_result_path, inference_raw_results)
+
+            # Final sort and write
+            if len(inference_raw_results) > 0:
+                append_and_rewrite_json_lines(inference_raw_result_path, inference_raw_results)
 
     # Ensure model_interface is created before inference_json or other passes
     # This is needed when requires_inference_raw=False or all cases were skipped

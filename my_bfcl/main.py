@@ -247,9 +247,10 @@ def calculate_batch_size_for_local_model(local_model: LocalModel, num_gpus: int)
     return batch_size
 
 # Run inference
-# Global variable to track if pipeline is initialized (reuse across configs)
+# Global variables to track if pipeline and model_interface are initialized (reuse across configs)
 _global_pipeline = None
-_global_pipeline_model = None
+_global_model_interface = None
+_global_model = None
 _global_pipeline_backend = None
 
 def get_or_create_local_pipeline(local_model: LocalModel, use_vllm: bool = False):
@@ -267,13 +268,13 @@ def get_or_create_local_pipeline(local_model: LocalModel, use_vllm: bool = False
     import torch
     import gc
 
-    global _global_pipeline, _global_pipeline_model, _global_pipeline_backend
+    global _global_pipeline, _global_model, _global_pipeline_backend
 
     backend_name = "vLLM" if use_vllm else "HuggingFace"
 
     # If we have a pipeline for the same model and backend, reuse it
     if (_global_pipeline is not None and
-        _global_pipeline_model == local_model and
+        _global_model == local_model and
         _global_pipeline_backend == use_vllm):
         print(f"Reusing existing {backend_name} pipeline for {local_model.value}")
         return _global_pipeline
@@ -281,7 +282,7 @@ def get_or_create_local_pipeline(local_model: LocalModel, use_vllm: bool = False
     # Different model or backend detected - aggressive cleanup of old pipeline
     if _global_pipeline is not None:
         old_backend_name = "vLLM" if _global_pipeline_backend else "HuggingFace"
-        print(f"Switching from {_global_pipeline_model.value} ({old_backend_name}) to {local_model.value} ({backend_name})")
+        print(f"Switching from {_global_model.value} ({old_backend_name}) to {local_model.value} ({backend_name})")
         print(f"Freeing memory from previous model...")
 
         # Cleanup: for vLLM wrapper, call cleanup(); for HF generator, close it
@@ -297,7 +298,7 @@ def get_or_create_local_pipeline(local_model: LocalModel, use_vllm: bool = False
 
         # Delete the generator and model references
         _global_pipeline = None
-        _global_pipeline_model = None
+        _global_model = None
         _global_pipeline_backend = None
 
         # Force immediate garbage collection
@@ -316,9 +317,38 @@ def get_or_create_local_pipeline(local_model: LocalModel, use_vllm: bool = False
         _global_pipeline = make_chat_pipeline_vllm(local_model)
     else:
         _global_pipeline = make_chat_pipeline(local_model)
-    _global_pipeline_model = local_model
+    _global_model = local_model
     _global_pipeline_backend = use_vllm
     return _global_pipeline
+
+
+def get_or_create_model_interface(model: Model):
+    """
+    Get or create a model interface for the given model.
+    Reuses the same model interface across configs with the same model.
+
+    Args:
+        model: ApiModel or LocalModel enum value
+
+    Returns:
+        The model interface for the given model
+    """
+    global _global_model_interface, _global_model
+
+    # If we have a model_interface for the same model, reuse it
+    if _global_model_interface is not None and _global_model == model:
+        print(f"Reusing existing model interface for {model.value}")
+        return _global_model_interface
+
+    # Different model detected - create new interface
+    if _global_model_interface is not None:
+        print(f"Switching model interface from {_global_model.value} to {model.value}")
+
+    # Create new model interface
+    print(f"Creating model interface for {model.value}")
+    _global_model_interface = create_model_interface(model)
+    _global_model = model
+    return _global_model_interface
 
 
 # Global caches for post-processing parameter matching (shared across all configs)
@@ -331,44 +361,7 @@ post_processing_cache_stats_different = {'hits': 0, 'misses': 0}
 post_processing_cache_stats_same = {'hits': 0, 'misses': 0}
 
 for config in configs:
-    print(f"Processing config: {config}", flush=True)
-    # config is composed of (model, translate_mode, add_noise_mode)
-
-    # process model configuration
-    # map model to model_postfix
-    # match config.model:
-    #     case ApiModel() as api_model:
-    #         match api_model:
-    #             case ApiModel.GPT_4O_MINI:
-    #                 model_postfix = "_gpt4o_mini"
-    #             case ApiModel.CLAUDE_SONNET:
-    #                 model_postfix = "_claude_sonnet"
-    #             case ApiModel.CLAUDE_HAIKU:
-    #                 model_postfix = "_claude_haiku"
-    #             case ApiModel.DEEPSEEK_CHAT:
-    #                 model_postfix = "_deepseek"
-    #             case ApiModel.LLAMA_3_1_8B:
-    #                 model_postfix = "_llama3_1_8b"
-    #             case ApiModel.LLAMA_3_1_70B:
-    #                 model_postfix = "_llama3_1_70b"
-    #             case _:
-    #                 raise ValueError(f"Unsupported API model: {api_model}")
-    #     case LocalModel() as local_model:
-    #         match local_model:
-    #             case LocalModel.GRANITE_3_1_8B_INSTRUCT:
-    #                 model_postfix = "_granite"
-    #             case LocalModel.QWEN_2_5_7B_INSTRUCT:
-    #                 model_postfix = "_qwen2_5_7b"
-    #             case LocalModel.QWEN_2_5_14B_INSTRUCT:
-    #                 model_postfix = "_qwen2_5_14b"
-    #             case LocalModel.QWEN_2_5_32B_INSTRUCT:
-    #                 model_postfix = "_qwen2_5_32b"
-    #             case LocalModel.QWEN_2_5_72B_INSTRUCT:
-    #                 model_postfix = "_qwen2_5_72b"
-    #             case _:
-    #                 raise ValueError(f"Unsupported local model: {local_model}")
-    #     case _:
-    #         raise ValueError(f"Unsupported model struct: {config.model}")
+    print(f"Processing config: {config}", flush=True)   
     
     post_process_option = PostProcessOption.DONT_POST_PROCESS
     prompt_translate = False
@@ -494,12 +487,12 @@ for config in configs:
                 print(f"  Concurrent requests: {max_concurrent} (vLLM handles internal batching)")
 
             if is_api_model:
-                model_interface = create_model_interface(config.model)
+                model_interface = get_or_create_model_interface(config.model)
                 generator = None  # API models don't use a generator
             elif is_local_model:
                 local_model = config.model
                 generator = get_or_create_local_pipeline(local_model, use_vllm=USE_VLLM_BACKEND)
-                model_interface = create_model_interface(local_model)
+                model_interface = get_or_create_model_interface(local_model)
             else:
                 raise ValueError(f"Unsupported model type: {type(config.model)}")
 
@@ -566,12 +559,12 @@ for config in configs:
             is_local_model = isinstance(config.model, LocalModel)
 
             if is_api_model:
-                model_interface = create_model_interface(config.model)
+                model_interface = get_or_create_model_interface(config.model)
                 generator = None  # API models don't use a generator
             elif is_local_model:
                 local_model = config.model
                 # generator = get_or_create_local_pipeline(local_model, use_vllm=USE_VLLM_BACKEND)
-                model_interface = create_model_interface(local_model)
+                model_interface = get_or_create_model_interface(local_model)
             else:
                 raise ValueError(f"Unsupported model type: {type(config.model)}")
 

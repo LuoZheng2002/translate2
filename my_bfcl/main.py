@@ -20,7 +20,7 @@ from post_processing import (
 # ============================================================================
 # Set to True to use vLLM backend for local models (faster, better batching)
 # Set to False to use HuggingFace transformers backend (default)
-USE_VLLM_BACKEND = False
+USE_VLLM_BACKEND = True
 # ============================================================================
 
 

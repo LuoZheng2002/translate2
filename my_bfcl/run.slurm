@@ -16,9 +16,9 @@ module load python/3.12.1
 
 # Go to your project directory
 # cd /u/zluo8/qwen
-cd /projects/bfdz/zluo8/translate/my_bfcl
+cd /projects/bfdz/zluo8/translate2/my_bfcl
 source activate_environment.sh
-
+cd /projects/bfdz/zluo8/translate2/my_bfcl
 # Set HF_HOME environment variable
 export HF_HOME=/work/nvme/bfdz/zluo8/huggingface
 # Convert the notebook to a .py script

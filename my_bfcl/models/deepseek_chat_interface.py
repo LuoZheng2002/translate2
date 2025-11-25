@@ -63,7 +63,7 @@ class DeepseekChatInterface(ModelInterface):
 
         return response.choices[0].message.content
 
-    def parse_output(self, raw_output: str) -> Union[List[Dict[str, Any]], str]:
+    def parse_output(self, raw_output: str, name_mapper=None) -> Union[List[Dict[str, Any]], str]:
         """
         Parse raw output from GPT-4o-mini using parse_ast.py strategy.
 

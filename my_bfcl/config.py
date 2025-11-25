@@ -21,6 +21,27 @@ class LocalModel(Enum):
 
 Model = Union[ApiModel, LocalModel]
 
+# Models that require function name sanitization (e.g., GPT-5 doesn't allow dots in function names)
+# This mapping is used to determine if we need to build name mappings for a model
+MODEL_REQUIRES_NAME_SANITIZATION = {
+    ApiModel.GPT_5: True,
+    ApiModel.GPT_5_MINI: True,
+    ApiModel.GPT_5_NANO: True,
+    # All other models default to False (no sanitization needed)
+}
+
+def requires_name_sanitization(model: Model) -> bool:
+    """
+    Check if a model requires function name sanitization.
+
+    Args:
+        model: ApiModel or LocalModel enum
+
+    Returns:
+        True if the model requires name sanitization, False otherwise
+    """
+    return MODEL_REQUIRES_NAME_SANITIZATION.get(model, False)
+
 class Language(Enum):
     CHINESE = auto()
     HINDI = auto()

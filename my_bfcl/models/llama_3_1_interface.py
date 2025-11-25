@@ -95,7 +95,7 @@ class Llama31Interface(ModelInterface):
         response_body = json.loads(response["body"].read())
         return response_body.get("generation", "")
 
-    def parse_output(self, raw_output: str) -> Union[List[Dict[str, Dict[str, Any]]], str]:
+    def parse_output(self, raw_output: str, name_mapper=None) -> Union[List[Dict[str, Dict[str, Any]]], str]:
         """
         Parse raw output from Llama 3.1 model using parse_ast.py strategy.
 

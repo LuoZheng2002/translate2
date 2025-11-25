@@ -74,7 +74,7 @@ class Qwen3Interface(ModelInterface):
     # Removed infer_batch() - now uses base class implementation with ThreadPoolExecutor
     # This allows concurrent request submission, and vLLM handles internal batching
 
-    def parse_output(self, raw_output: str) -> Union[List[Dict[str, Dict[str, Any]]], str]:
+    def parse_output(self, raw_output: str, name_mapper=None) -> Union[List[Dict[str, Dict[str, Any]]], str]:
         """
         Parse raw output from Qwen3 model using parse_ast.py strategy.
 

@@ -14,6 +14,7 @@ from post_processing import (
     save_cache,
     process_post_processing_sample
 )
+from utils.name_mapping import get_global_name_mapper
 
 # ============================================================================
 # LOCAL MODEL INFERENCE BACKEND CONFIGURATION
@@ -533,6 +534,26 @@ for config in configs:
             if len(inference_raw_results) > 0:
                 append_and_rewrite_json_lines(inference_raw_result_path, inference_raw_results)
 
+    # Populate global name mapper if this model requires name sanitization
+    # This is done once per model, independent of whether we have a model_interface
+    # This is much cheaper than loading the model just to build name mappings
+    if requires_name_sanitization(config.model):
+        # Collect all unique functions from test_cases
+        all_functions = []
+        seen_functions = set()
+        for case in test_cases:
+            for func in case['function']:
+                func_name = func.get('name')
+                if func_name and func_name not in seen_functions:
+                    all_functions.append(func)
+                    seen_functions.add(func_name)
+
+        # Populate the global name mapper (model-agnostic, no model loading needed)
+        name_mapper = get_global_name_mapper()
+        name_mapper.populate_from_functions(all_functions)
+    else:
+        name_mapper = None
+
     # Ensure model_interface is created before inference_json or other passes
     # This is needed when requires_inference_raw=False or all cases were skipped
     if requires_inference_json or requires_post_processing or requires_evaluation or requires_score:
@@ -550,21 +571,8 @@ for config in configs:
             else:
                 raise ValueError(f"Unsupported model type: {type(config.model)}")
 
-        # For GPT-5 models, populate name_mapping from test_cases
-        # This ensures parse_output can convert sanitized names back to original names
-        if hasattr(model_interface, 'populate_name_mapping'):
-            # Collect all unique functions from test_cases
-            all_functions = []
-            seen_functions = set()
-            for case in test_cases:
-                for func in case['function']:
-                    func_name = func.get('name')
-                    if func_name and func_name not in seen_functions:
-                        all_functions.append(func)
-                        seen_functions.add(func_name)
-
-            # Populate the name mapping
-            model_interface.populate_name_mapping(all_functions)
+        # Note: We no longer call populate_name_mapping() on model_interface
+        # Name mapping is handled by the global name_mapper instead
 
     if requires_inference_json:
         # reload inference raw results
@@ -594,7 +602,8 @@ for config in configs:
             id = inference_raw['id']
             # convert raw result to json format
             # decoded_output = raw_to_json(config.model, id, inference_raw['result'])
-            decoded_output = model_interface.parse_output(inference_raw['result'])
+            # Pass name_mapper to parse_output for models that need name sanitization
+            decoded_output = model_interface.parse_output(inference_raw['result'], name_mapper=name_mapper)
             inference_json_entry = {
                 "id": id,
                 "result": decoded_output

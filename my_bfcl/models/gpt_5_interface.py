@@ -17,7 +17,7 @@ Key differences from GPT-4:
 import os
 import json
 import re
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Optional
 from dotenv import load_dotenv
 from models.base import ModelInterface
 
@@ -172,7 +172,7 @@ class GPT5Interface(ModelInterface):
 
         return json.dumps({"function_calls": model_responses})
 
-    def parse_output(self, raw_output: str) -> Union[List[Dict[str, Any]], str]:
+    def parse_output(self, raw_output: str, name_mapper=None) -> Union[List[Dict[str, Any]], str]:
         """
         Parse raw output from GPT-5's structured response format.
 
@@ -181,6 +181,9 @@ class GPT5Interface(ModelInterface):
 
         Args:
             raw_output: Raw JSON string output from the model
+            name_mapper: Optional external FunctionNameMapper for name conversion.
+                        If provided, uses this instead of self.name_mapping.
+                        This allows parsing without loading the model.
 
         Returns:
             List of function call dictionaries in format: [{func_name: {arguments}}, ...]
@@ -215,7 +218,11 @@ class GPT5Interface(ModelInterface):
 
                         if sanitized_name:
                             # Convert sanitized name back to original name
-                            original_name = self.name_mapping.get(sanitized_name, sanitized_name)
+                            # Use external name_mapper if provided, otherwise fall back to self.name_mapping
+                            if name_mapper:
+                                original_name = name_mapper.get_original_name(sanitized_name)
+                            else:
+                                original_name = self.name_mapping.get(sanitized_name, sanitized_name)
 
                             # Convert to BFCL format: {func_name: {arguments}}
                             extracted.append({original_name: arguments})

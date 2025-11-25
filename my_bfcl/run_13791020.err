@@ -1,0 +1,19 @@
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading safetensors checkpoint shards:   0% Completed | 0/5 [00:00<?, ?it/s]
+Loading safetensors checkpoint shards:  20% Completed | 1/5 [00:00<00:03,  1.11it/s]
+Loading safetensors checkpoint shards:  40% Completed | 2/5 [00:02<00:04,  1.61s/it]
+Loading safetensors checkpoint shards:  60% Completed | 3/5 [00:05<00:04,  2.12s/it]
+Loading safetensors checkpoint shards:  80% Completed | 4/5 [00:08<00:02,  2.47s/it]
+Loading safetensors checkpoint shards: 100% Completed | 5/5 [00:12<00:00,  2.76s/it]
+Loading safetensors checkpoint shards: 100% Completed | 5/5 [00:12<00:00,  2.41s/it]
+
+Traceback (most recent call last):
+  File "/projects/bfdz/zluo8/translate2/my_bfcl/main.py", line 509, in <module>
+    all_results = model_interface.infer_batch(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/projects/bfdz/zluo8/translate2/my_bfcl/models/base.py", line 79, in infer_batch
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/sw/spack/deltas11-2023-03/apps/linux-rhel8-zen3/gcc-11.4.0/python-3.12.1-ahcgi2c/lib/python3.12/concurrent/futures/thread.py", line 147, in __init__
+    raise ValueError("max_workers must be greater than 0")
+ValueError: max_workers must be greater than 0

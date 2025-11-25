@@ -247,79 +247,182 @@ def calculate_batch_size_for_local_model(local_model: LocalModel, num_gpus: int)
     return batch_size
 
 # Run inference
-# Global variables to track if pipeline and model_interface are initialized (reuse across configs)
-_global_pipeline = None
+# Global variables to track if generator (pipeline/client) and model_interface are initialized (reuse across configs)
+_global_generator = None  # For local models: pipeline; for API models: client
 _global_model_interface = None
 _global_model = None
-_global_pipeline_backend = None
+_global_backend = None  # Only relevant for local models (vLLM vs HuggingFace)
 
-def get_or_create_local_pipeline(local_model: LocalModel, use_vllm: bool = False):
+
+def create_api_client(api_model: ApiModel):
     """
-    Get or create a pipeline for a local model.
-    Reuses the same pipeline across configs with the same model and backend.
+    Factory function to create API clients for API models.
 
     Args:
-        local_model: LocalModel enum value
-        use_vllm: If True, use vLLM backend; if False, use HuggingFace backend
+        api_model: ApiModel enum value
 
-    Guarantees: If you switch to a different model or backend, the previous model's memory
+    Returns:
+        API client object (e.g., OpenAI client, Anthropic client, etc.)
+
+    Raises:
+        EnvironmentError: If required API keys are missing
+        ValueError: If model is not supported
+    """
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=".env")
+
+    # OpenAI-based models (GPT-5, GPT-5-mini, GPT-5-nano)
+    if api_model in [ApiModel.GPT_5, ApiModel.GPT_5_MINI, ApiModel.GPT_5_NANO]:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise EnvironmentError("OPENAI_API_KEY not found in .env")
+        from openai import OpenAI
+        return OpenAI(api_key=api_key)
+
+    # DeepSeek (OpenAI-compatible endpoint)
+    elif api_model == ApiModel.DEEPSEEK_CHAT:
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise EnvironmentError("DEEPSEEK_API_KEY not found in .env")
+        from openai import OpenAI
+        return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+
+    # AWS Bedrock models (Llama)
+    elif api_model in [ApiModel.LLAMA_3_1_8B, ApiModel.LLAMA_3_1_70B]:
+        # Bedrock client creation
+        import boto3
+        return boto3.client(
+            service_name='bedrock-runtime',
+            region_name=os.getenv('AWS_REGION', 'us-west-2')
+        )
+
+    else:
+        raise ValueError(f"Unsupported API model: {api_model}")
+
+
+def get_or_create_generator(model: Model, use_vllm: bool = False):
+    """
+    Get or create a generator/client for the given model.
+    Reuses the same generator across configs with the same model (and backend for local models).
+
+    For local models: Returns a pipeline (expensive, loads model weights into GPU memory)
+    For API models: Returns an API client (currently returns None as client is managed by model_interface)
+
+    Args:
+        model: ApiModel or LocalModel enum value
+        use_vllm: Only relevant for LocalModel - if True, use vLLM backend; if False, use HuggingFace backend
+
+    Returns:
+        For LocalModel: pipeline object
+        For ApiModel: None (client managed internally by model_interface for now)
+
+    Guarantees: If you switch to a different local model or backend, the previous model's memory
     is immediately freed (assumes current model will never be used again in this run).
     """
     import torch
     import gc
 
-    global _global_pipeline, _global_model, _global_pipeline_backend
+    global _global_generator, _global_model, _global_backend
 
-    backend_name = "vLLM" if use_vllm else "HuggingFace"
+    # Handle API models
+    if isinstance(model, ApiModel):
+        # Check if we can reuse existing API client
+        if _global_generator is not None and _global_model == model:
+            print(f"Reusing existing API client for {model.value}")
+            return _global_generator
 
-    # If we have a pipeline for the same model and backend, reuse it
-    if (_global_pipeline is not None and
-        _global_model == local_model and
-        _global_pipeline_backend == use_vllm):
-        print(f"Reusing existing {backend_name} pipeline for {local_model.value}")
-        return _global_pipeline
+        # Different API model or switching from local model
+        if _global_generator is not None:
+            # Clean up previous generator if it was a local model
+            if isinstance(_global_model, LocalModel):
+                print(f"Switching from local model {_global_model.value} to API model {model.value}")
+                print(f"Freeing memory from previous model...")
 
-    # Different model or backend detected - aggressive cleanup of old pipeline
-    if _global_pipeline is not None:
-        old_backend_name = "vLLM" if _global_pipeline_backend else "HuggingFace"
-        print(f"Switching from {_global_model.value} ({old_backend_name}) to {local_model.value} ({backend_name})")
-        print(f"Freeing memory from previous model...")
+                try:
+                    if _global_backend:  # vLLM
+                        _global_generator.cleanup()
+                    else:  # HuggingFace generator
+                        _global_generator.close()
+                except (StopIteration, GeneratorExit):
+                    pass
+                except Exception as e:
+                    print(f"Warning: Error during cleanup: {e}")
 
-        # Cleanup: for vLLM wrapper, call cleanup(); for HF generator, close it
-        try:
-            if _global_pipeline_backend:  # vLLM
-                _global_pipeline.cleanup()
-            else:  # HuggingFace generator
-                _global_pipeline.close()
-        except (StopIteration, GeneratorExit):
-            pass
-        except Exception as e:
-            print(f"Warning: Error during cleanup: {e}")
+                # Force immediate garbage collection and free CUDA memory
+                _global_generator = None
+                gc.collect()
+                gc.collect()
+                torch.cuda.empty_cache()
+                print(f"Memory freed.")
+            else:
+                print(f"Switching from API model {_global_model.value} to {model.value}")
 
-        # Delete the generator and model references
-        _global_pipeline = None
-        _global_model = None
-        _global_pipeline_backend = None
+        # Create and cache API client
+        print(f"Creating API client for {model.value}")
+        _global_generator = create_api_client(model)
+        _global_model = model
+        _global_backend = None
+        return _global_generator
 
-        # Force immediate garbage collection
-        gc.collect()
-        gc.collect()  # Run twice to handle reference cycles
+    # Handle local models
+    elif isinstance(model, LocalModel):
+        backend_name = "vLLM" if use_vllm else "HuggingFace"
 
-        # Clear CUDA cache - this is the key step
-        torch.cuda.empty_cache()
+        # Check if we can reuse existing pipeline
+        if (_global_generator is not None and
+            _global_model == model and
+            _global_backend == use_vllm):
+            print(f"Reusing existing {backend_name} pipeline for {model.value}")
+            return _global_generator
 
-        print(f"Memory freed. Loading new model...")
+        # Different model or backend detected - cleanup
+        if _global_generator is not None:
+            if isinstance(_global_model, LocalModel):
+                old_backend_name = "vLLM" if _global_backend else "HuggingFace"
+                print(f"Switching from {_global_model.value} ({old_backend_name}) to {model.value} ({backend_name})")
+            else:
+                print(f"Switching from API model {_global_model.value} to local model {model.value} ({backend_name})")
 
-    # Create new pipeline for the new model with specified backend
-    print(f"Creating {backend_name} pipeline for {local_model.value}")
-    if use_vllm:
-        from call_llm import make_chat_pipeline_vllm
-        _global_pipeline = make_chat_pipeline_vllm(local_model)
+            print(f"Freeing memory from previous model...")
+
+            # Cleanup: for vLLM wrapper, call cleanup(); for HF generator, close it
+            try:
+                if _global_backend:  # vLLM
+                    _global_generator.cleanup()
+                else:  # HuggingFace generator
+                    _global_generator.close()
+            except (StopIteration, GeneratorExit):
+                pass
+            except Exception as e:
+                print(f"Warning: Error during cleanup: {e}")
+
+            # Delete the generator and model references
+            _global_generator = None
+            _global_model = None
+            _global_backend = None
+
+            # Force immediate garbage collection
+            gc.collect()
+            gc.collect()  # Run twice to handle reference cycles
+
+            # Clear CUDA cache - this is the key step
+            torch.cuda.empty_cache()
+
+            print(f"Memory freed. Loading new model...")
+
+        # Create new pipeline for the new model with specified backend
+        print(f"Creating {backend_name} pipeline for {model.value}")
+        if use_vllm:
+            from call_llm import make_chat_pipeline_vllm
+            _global_generator = make_chat_pipeline_vllm(model)
+        else:
+            _global_generator = make_chat_pipeline(model)
+        _global_model = model
+        _global_backend = use_vllm
+        return _global_generator
+
     else:
-        _global_pipeline = make_chat_pipeline(local_model)
-    _global_model = local_model
-    _global_pipeline_backend = use_vllm
-    return _global_pipeline
+        raise ValueError(f"Unsupported model type: {type(model)}")
 
 
 def get_or_create_model_interface(model: Model):
@@ -486,15 +589,9 @@ for config in configs:
                 print(f"  Backend: {'vLLM' if USE_VLLM_BACKEND else 'HuggingFace'}")
                 print(f"  Concurrent requests: {max_concurrent} (vLLM handles internal batching)")
 
-            if is_api_model:
-                model_interface = get_or_create_model_interface(config.model)
-                generator = None  # API models don't use a generator
-            elif is_local_model:
-                local_model = config.model
-                generator = get_or_create_local_pipeline(local_model, use_vllm=USE_VLLM_BACKEND)
-                model_interface = get_or_create_model_interface(local_model)
-            else:
-                raise ValueError(f"Unsupported model type: {type(config.model)}")
+            # Get or create generator/client for the model (unified for both API and local models)
+            generator = get_or_create_generator(config.model, use_vllm=USE_VLLM_BACKEND)
+            model_interface = get_or_create_model_interface(config.model)
 
             # Prepare all data for concurrent processing
             all_functions_list = []
@@ -553,20 +650,11 @@ for config in configs:
     # Ensure model_interface is created before inference_json or other passes
     # This is needed when requires_inference_raw=False or all cases were skipped
     if requires_inference_json or requires_post_processing or requires_evaluation or requires_score:
-        # Create model_interface and generator if they don't exist yet
+        # Create model_interface if it doesn't exist yet
+        # Note: We don't create generator here since it's not used in these phases
+        # (only needed for actual inference)
         if 'model_interface' not in locals():
-            is_api_model = isinstance(config.model, ApiModel)
-            is_local_model = isinstance(config.model, LocalModel)
-
-            if is_api_model:
-                model_interface = get_or_create_model_interface(config.model)
-                generator = None  # API models don't use a generator
-            elif is_local_model:
-                local_model = config.model
-                # generator = get_or_create_local_pipeline(local_model, use_vllm=USE_VLLM_BACKEND)
-                model_interface = get_or_create_model_interface(local_model)
-            else:
-                raise ValueError(f"Unsupported model type: {type(config.model)}")
+            model_interface = get_or_create_model_interface(config.model)
 
         # Note: We no longer call populate_name_mapping() on model_interface
         # Name mapping is handled by the global name_mapper instead

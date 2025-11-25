@@ -14,11 +14,9 @@ Key differences from GPT-4:
 - Structured tool calling with strict mode
 """
 
-import os
 import json
 import re
-from typing import List, Dict, Any, Union, Optional
-from dotenv import load_dotenv
+from typing import List, Dict, Any, Union
 from models.base import ModelInterface
 
 
@@ -35,15 +33,6 @@ class GPT5Interface(ModelInterface):
                            Strict mode requires all parameters to be required and has stricter
                            schema validation. Disable if you have optional parameters.
         """
-        load_dotenv(dotenv_path=".env")
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise EnvironmentError("OPENAI_API_KEY not found in .env")
-
-        # Lazy import to avoid dependency if not using this model
-        from openai import OpenAI
-        self.client = OpenAI(api_key=self.api_key)
-
         # Validate and set model variant
         valid_variants = ["gpt-5", "gpt-5-mini", "gpt-5-nano"]
         if model_variant not in valid_variants:
@@ -91,11 +80,15 @@ class GPT5Interface(ModelInterface):
             user_query: User query as a string
             prompt_passing_in_english: Whether to request English parameter passing
             model: Unused for API models (kept for interface compatibility)
-            generator: Unused for API models (kept for interface compatibility)
+            generator: OpenAI client to use (required). This should be provided by the caller
+                      and allows caching and reusing the client across multiple inferences.
 
         Returns:
             Raw model output as JSON string
         """
+        # Use the provided client directly
+        client = generator
+
         # Convert BFCL functions to GPT-5 tools format
         tools = self._convert_functions_to_tools(functions, prompt_passing_in_english)
 
@@ -138,7 +131,7 @@ class GPT5Interface(ModelInterface):
         if tools and len(tools) > 0:
             kwargs["tools"] = tools
 
-        response = self.client.responses.create(**kwargs)
+        response = client.responses.create(**kwargs)
 
         # Parse response following BFCL's approach (openai_response.py:145-172)
         # The response.output is a list of items, each with a type field

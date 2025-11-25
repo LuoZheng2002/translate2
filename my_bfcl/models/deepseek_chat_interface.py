@@ -7,11 +7,9 @@ Handles:
 - Output parsing from Python function call syntax
 """
 
-import os
 import ast
 import json
 from typing import List, Dict, Any, Union
-from dotenv import load_dotenv
 from models.base import ModelInterface
 
 
@@ -20,14 +18,6 @@ class DeepseekChatInterface(ModelInterface):
 
     def __init__(self):
         """Initialize the DeepSeek Chat interface."""
-        load_dotenv(dotenv_path=".env")
-        self.api_key = os.getenv("DEEPSEEK_API_KEY")
-        if not self.api_key:
-            raise EnvironmentError("DEEPSEEK_API_KEY not found in .env")
-
-        # Lazy import to avoid dependency if not using this model
-        from openai import OpenAI
-        self.client = OpenAI(api_key=self.api_key, base_url="https://api.deepseek.com")
         self.model_name = "deepseek-chat"
 
     def infer(self, functions: List[Dict[str, Any]], user_query: str,
@@ -40,11 +30,15 @@ class DeepseekChatInterface(ModelInterface):
             user_query: User query as a string
             prompt_passing_in_english: Whether to request English parameter passing
             model: Unused for API models (kept for interface compatibility)
-            generator: Unused for API models (kept for interface compatibility)
+            generator: OpenAI-compatible client to use (required). This should be provided by the caller
+                      and allows caching and reusing the client across multiple inferences.
 
         Returns:
             Raw model output as a string
         """
+        # Use the provided client directly
+        client = generator
+
         system_prompt = self._generate_system_prompt(
             functions=functions,
             prompt_passing_in_english=prompt_passing_in_english,
@@ -56,7 +50,7 @@ class DeepseekChatInterface(ModelInterface):
             {"role": "user", "content": user_query}
         ]
 
-        response = self.client.chat.completions.create(
+        response = client.chat.completions.create(
             model=self.model_name,
             messages=messages,
             temperature=0,

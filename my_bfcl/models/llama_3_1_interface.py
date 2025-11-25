@@ -7,11 +7,9 @@ Handles:
 - Output parsing from Python function call syntax
 """
 
-import os
 import ast
 import json
 from typing import List, Dict, Any, Union
-from dotenv import load_dotenv
 from models.base import ModelInterface
 
 
@@ -26,28 +24,6 @@ class Llama31Interface(ModelInterface):
             model_id: AWS Bedrock model ID for Llama 3.1
                      Options: "meta.llama3-1-8b-instruct-v1:0" or "meta.llama3-1-70b-instruct-v1:0"
         """
-        load_dotenv(dotenv_path=".env")
-
-        # Get AWS credentials from environment
-        # self.aws_region = os.getenv("AWS_REGION", "us-east-1")
-        # self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
-        # self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-
-        # if not self.aws_access_key_id or not self.aws_secret_access_key:
-        #     raise EnvironmentError(
-        #         "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY not found in .env"
-        #     )
-
-        # Lazy import to avoid dependency if not using this model
-        import boto3
-        self.client = boto3.client(
-            "bedrock-runtime",
-            region_name="us-west-2",
-            # region_name=self.aws_region,
-            # aws_access_key_id=self.aws_access_key_id,
-            # aws_secret_access_key=self.aws_secret_access_key
-        )
-
         self.model_id = model_id
 
     def infer(self, functions: List[Dict[str, Any]], user_query: str,
@@ -60,11 +36,15 @@ class Llama31Interface(ModelInterface):
             user_query: User query as a string
             prompt_passing_in_english: Whether to request English parameter passing
             model: Unused for API models (kept for interface compatibility)
-            generator: Unused for API models (kept for interface compatibility)
+            generator: Bedrock client to use (required). This should be provided by the caller
+                      and allows caching and reusing the client across multiple inferences.
 
         Returns:
             Raw model output as a string
         """
+        # Use the provided client directly
+        client = generator
+
         system_prompt = self._generate_system_prompt(
             functions=functions,
             prompt_passing_in_english=prompt_passing_in_english
@@ -85,7 +65,7 @@ class Llama31Interface(ModelInterface):
         }
 
         # Call Bedrock API
-        response = self.client.invoke_model(
+        response = client.invoke_model(
             modelId=self.model_id,
             body=json.dumps(request_body),
             contentType="application/json",

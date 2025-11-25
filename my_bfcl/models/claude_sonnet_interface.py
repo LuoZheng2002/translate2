@@ -31,7 +31,7 @@ class ClaudeSonnetInterface(ModelInterface):
         self.model_name = "claude-3-5-sonnet-20241022"
 
     def infer(self, functions: List[Dict[str, Any]], user_query: str,
-              prompt_passing_in_english: bool = True, model=None) -> str:
+              prompt_passing_in_english: bool = True, model=None, generator=None) -> str:
         """
         Run inference with Claude Sonnet.
 
@@ -40,6 +40,7 @@ class ClaudeSonnetInterface(ModelInterface):
             user_query: User query as a string
             prompt_passing_in_english: Whether to request English parameter passing
             model: Unused for API models (kept for interface compatibility)
+            generator: Unused for API models (kept for interface compatibility)
 
         Returns:
             Raw model output as a string

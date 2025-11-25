@@ -23,7 +23,7 @@ class ModelInterface(ABC):
 
     @abstractmethod
     def infer(self, functions: List[Dict[str, Any]], user_query: str,
-              prompt_passing_in_english: bool = True, model=None) -> str:
+              prompt_passing_in_english: bool = True, model=None, generator=None) -> str:
         """
         Run inference with the model.
 
@@ -32,6 +32,7 @@ class ModelInterface(ABC):
             user_query: User query/question as a string
             prompt_passing_in_english: Whether to request English parameter passing (default: True)
             model: Optional model type for customizing system prompt (LocalModel enum for Granite)
+            generator: Optional generator for local model inference (required for local models)
 
         Returns:
             Raw model output as a string
@@ -40,7 +41,8 @@ class ModelInterface(ABC):
 
     def infer_batch(self, functions_list: List[List[Dict[str, Any]]],
                     user_queries: List[str],
-                    prompt_passing_in_english: bool = True) -> List[str]:
+                    prompt_passing_in_english: bool = True,
+                    generator=None) -> List[str]:
         """
         Run batch inference with the model using concurrent requests.
 
@@ -51,6 +53,7 @@ class ModelInterface(ABC):
             functions_list: List of function definition lists (one per query)
             user_queries: List of user queries as strings
             prompt_passing_in_english: Whether to request English parameter passing (default: True)
+            generator: Optional generator for local model inference (required for local models)
 
         Returns:
             List of raw model outputs as strings (same order as input)
@@ -67,7 +70,8 @@ class ModelInterface(ABC):
                 response = self.infer(
                     functions=functions,
                     user_query=user_query,
-                    prompt_passing_in_english=prompt_passing_in_english
+                    prompt_passing_in_english=prompt_passing_in_english,
+                    generator=generator
                 )
                 return index, response
             except Exception as e:

@@ -19,14 +19,12 @@ from models.qwen2_5_interface import Qwen25InstructInterface
 from models.qwen3_interface import Qwen3Interface
 
 
-def create_model_interface(model: Union[ApiModel, LocalModel],
-                          generator=None) -> ModelInterface:
+def create_model_interface(model: Union[ApiModel, LocalModel]) -> ModelInterface:
     """
     Factory function to create appropriate model interface instance.
 
     Args:
         model: Either an ApiModel enum or LocalModel enum
-        generator: Optional pre-initialized generator for local models
 
     Returns:
         ModelInterface instance for the specified model
@@ -38,7 +36,7 @@ def create_model_interface(model: Union[ApiModel, LocalModel],
     if isinstance(model, ApiModel):
         return _create_api_model_interface(model)
     elif isinstance(model, LocalModel):
-        return _create_local_model_interface(model, generator)
+        return _create_local_model_interface(model)
     else:
         raise ValueError(f"Unsupported model type: {type(model)}")
 
@@ -74,13 +72,12 @@ def _create_api_model_interface(model: ApiModel) -> ModelInterface:
             raise ValueError(f"Unsupported API model: {model}")
 
 
-def _create_local_model_interface(model: LocalModel, generator) -> ModelInterface:
+def _create_local_model_interface(model: LocalModel) -> ModelInterface:
     """
     Create interface for local models.
 
     Args:
         model: LocalModel enum value
-        generator: Optional pre-initialized generator
 
     Returns:
         ModelInterface instance
@@ -88,29 +85,28 @@ def _create_local_model_interface(model: LocalModel, generator) -> ModelInterfac
     Raises:
         ValueError: If model is not supported
     """
-    assert generator is not None, "Generator must be provided for local models"
     match model:
         # case LocalModel.GRANITE_3_1_8B_INSTRUCT:
-        #     return Granite3_1_8BInstructInterface(generator)
+        #     return Granite3_1_8BInstructInterface()
         case LocalModel.GRANITE_4_0_H_TINY:
-            return Granite4Interface(generator, model_id="ibm-granite/granite-4.0-h-tiny")
+            return Granite4Interface(model_id="ibm-granite/granite-4.0-h-tiny")
         case LocalModel.GRANITE_4_0_H_SMALL:
-            return Granite4Interface(generator, model_id="ibm-granite/granite-4.0-h-small")
+            return Granite4Interface(model_id="ibm-granite/granite-4.0-h-small")
         # case LocalModel.QWEN_2_5_7B_INSTRUCT:
-        #     return Qwen25InstructInterface(generator, model_id="Qwen/Qwen2.5-7B-Instruct")
+        #     return Qwen25InstructInterface(model_id="Qwen/Qwen2.5-7B-Instruct")
         # case LocalModel.QWEN_2_5_14B_INSTRUCT:
-        #     return Qwen25InstructInterface(generator, model_id="Qwen/Qwen2.5-14B-Instruct")
+        #     return Qwen25InstructInterface(model_id="Qwen/Qwen2.5-14B-Instruct")
         # case LocalModel.QWEN_2_5_32B_INSTRUCT:
-        #     return Qwen25InstructInterface(generator, model_id="Qwen/Qwen2.5-32B-Instruct")
+        #     return Qwen25InstructInterface(model_id="Qwen/Qwen2.5-32B-Instruct")
         # case LocalModel.QWEN_2_5_72B_INSTRUCT:
-        #     return Qwen25InstructInterface(generator, model_id="Qwen/Qwen2.5-72B-Instruct")
+        #     return Qwen25InstructInterface(model_id="Qwen/Qwen2.5-72B-Instruct")
         case LocalModel.QWEN3_8B:
-            return Qwen3Interface(generator, model_id="Qwen/Qwen3-8B")
+            return Qwen3Interface(model_id="Qwen/Qwen3-8B")
         case LocalModel.QWEN3_14B:
-            return Qwen3Interface(generator, model_id="Qwen/Qwen3-14B")
+            return Qwen3Interface(model_id="Qwen/Qwen3-14B")
         case LocalModel.QWEN3_32B:
-            return Qwen3Interface(generator, model_id="Qwen/Qwen3-32B-A3B")
+            return Qwen3Interface(model_id="Qwen/Qwen3-32B-A3B")
         case LocalModel.QWEN3_NEXT_80B:
-            return Qwen3Interface(generator, model_id="Qwen/Qwen3-Next-80B-A3B-Instruct")
+            return Qwen3Interface(model_id="Qwen/Qwen3-Next-80B-A3B-Instruct")
         case _:
             raise ValueError(f"Unsupported local model: {model}")

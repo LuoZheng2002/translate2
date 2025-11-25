@@ -21,24 +21,21 @@ except ImportError:
 class Qwen3Interface(ModelInterface):
     """Handler for Alibaba Qwen3 local model."""
 
-    def __init__(self, generator, model_id: str = "Qwen/Qwen3-8B-Instruct", enable_thinking: bool = False):
+    def __init__(self, model_id: str = "Qwen/Qwen3-8B-Instruct", enable_thinking: bool = False):
         """
         Initialize the Qwen3 interface.
 
         Args:
-            generator: Optional pre-initialized generator from pipeline
-                      If None, you must provide it via set_generator() before calling infer()
             model_id: Model identifier string
                      Options: "Qwen/Qwen3-8B-Instruct", "Qwen/Qwen3-14B-Instruct", etc.
             enable_thinking: Whether to enable Qwen3's reasoning mode (default: False)
                            When False, adds empty <think></think> tags to disable thinking
         """
-        self.generator = generator
         self.model_id = model_id
         self.enable_thinking = enable_thinking
 
     def infer(self, functions: List[Dict[str, Any]], user_query: str,
-              prompt_passing_in_english: bool = True, model=None) -> str:
+              prompt_passing_in_english: bool = True, model=None, generator=None) -> str:
         """
         Run inference with Qwen3 model.
 
@@ -47,12 +44,13 @@ class Qwen3Interface(ModelInterface):
             user_query: User query as a string
             prompt_passing_in_english: Whether to request English parameter passing
             model: Should be LocalModel.QWEN_3 (for system prompt generation)
+            generator: Generator instance for inference (required)
 
         Returns:
             Raw model output as a string
         """
-        if self.generator is None:
-            raise RuntimeError("Generator not initialized. Call set_generator() first.")
+        if generator is None:
+            raise RuntimeError("Generator must be provided for local model inference.")
 
         system_prompt = self._generate_system_prompt(
             functions=functions,
@@ -68,7 +66,7 @@ class Qwen3Interface(ModelInterface):
         )
 
         # Call generate method on wrapper
-        result = self.generator.generate(template)
+        result = generator.generate(template)
         return result
 
     # Removed infer_batch() - now uses base class implementation with ThreadPoolExecutor

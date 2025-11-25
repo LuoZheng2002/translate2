@@ -20,21 +20,18 @@ except ImportError:
 class Granite4Interface(ModelInterface):
     """Handler for IBM Granite 4 local model."""
 
-    def __init__(self, generator, model_id: str = "ibm-granite/granite-4-8b-instruct"):
+    def __init__(self, model_id: str = "ibm-granite/granite-4-8b-instruct"):
         """
         Initialize the Granite 4 interface.
 
         Args:
-            generator: Optional pre-initialized generator from pipeline
-                      If None, you must provide it via set_generator() before calling infer()
             model_id: Model identifier string
                      Options: "ibm-granite/granite-4-8b-instruct", "ibm-granite/granite-4-20b-instruct", etc.
         """
-        self.generator = generator
         self.model_id = model_id
 
     def infer(self, functions: List[Dict[str, Any]], user_query: str,
-              prompt_passing_in_english: bool = True, model=None) -> str:
+              prompt_passing_in_english: bool = True, model=None, generator=None) -> str:
         """
         Run inference with Granite 4 model.
 
@@ -43,12 +40,13 @@ class Granite4Interface(ModelInterface):
             user_query: User query as a string
             prompt_passing_in_english: Whether to request English parameter passing
             model: Should be LocalModel.GRANITE_4 (for system prompt generation)
+            generator: Generator instance for inference (required)
 
         Returns:
             Raw model output as a string
         """
-        if self.generator is None:
-            raise RuntimeError("Generator not initialized. Call set_generator() first.")
+        if generator is None:
+            raise RuntimeError("Generator must be provided for local model inference.")
 
         system_prompt = self._generate_system_prompt(
             functions=functions,
@@ -64,7 +62,7 @@ class Granite4Interface(ModelInterface):
         )
 
         # Call generate method on wrapper
-        result = self.generator.generate(template)
+        result = generator.generate(template)
         return result
 
     # Removed infer_batch() - now uses base class implementation with ThreadPoolExecutor

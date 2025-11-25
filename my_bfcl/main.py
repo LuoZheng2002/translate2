@@ -470,6 +470,7 @@ for config in configs:
         if len(cases_to_process) == 0:
             print(f"All test cases for {config.model.value} have already been processed. Skipping model loading and inference.")
         else:
+            print("Entering inference phase...")
             # Determine model type and create interface once
             is_api_model = isinstance(config.model, ApiModel)
             is_local_model = isinstance(config.model, LocalModel)
@@ -494,10 +495,11 @@ for config in configs:
 
             if is_api_model:
                 model_interface = create_model_interface(config.model)
+                generator = None  # API models don't use a generator
             elif is_local_model:
                 local_model = config.model
                 generator = get_or_create_local_pipeline(local_model, use_vllm=USE_VLLM_BACKEND)
-                model_interface = create_model_interface(local_model, generator)
+                model_interface = create_model_interface(local_model)
             else:
                 raise ValueError(f"Unsupported model type: {type(config.model)}")
 
@@ -514,7 +516,8 @@ for config in configs:
             all_results = model_interface.infer_batch(
                 functions_list=all_functions_list,
                 user_queries=all_user_queries,
-                prompt_passing_in_english=prompt_translate
+                prompt_passing_in_english=prompt_translate,
+                generator=generator
             )
             print(f"All {len(cases_to_process)} requests completed.")
 
@@ -557,17 +560,18 @@ for config in configs:
     # Ensure model_interface is created before inference_json or other passes
     # This is needed when requires_inference_raw=False or all cases were skipped
     if requires_inference_json or requires_post_processing or requires_evaluation or requires_score:
-        # Create model_interface if it doesn't exist yet
+        # Create model_interface and generator if they don't exist yet
         if 'model_interface' not in locals():
             is_api_model = isinstance(config.model, ApiModel)
             is_local_model = isinstance(config.model, LocalModel)
 
             if is_api_model:
                 model_interface = create_model_interface(config.model)
+                generator = None  # API models don't use a generator
             elif is_local_model:
                 local_model = config.model
-                generator = get_or_create_local_pipeline(local_model, use_vllm=USE_VLLM_BACKEND)
-                model_interface = create_model_interface(local_model, generator)
+                # generator = get_or_create_local_pipeline(local_model, use_vllm=USE_VLLM_BACKEND)
+                model_interface = create_model_interface(local_model)
             else:
                 raise ValueError(f"Unsupported model type: {type(config.model)}")
 
